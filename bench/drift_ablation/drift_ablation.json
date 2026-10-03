@@ -1,0 +1,29 @@
+{
+  "capture_id": "c00a170fe1",
+  "input": "single_room.zip",
+  "duration_s": 37.17236916699039,
+  "total_vertical_drift_raw_cm": 2.0,
+  "residual_drift_cm": 3.0,
+  "floor_heights_raw": [
+    -1.4493,
+    -1.4543,
+    -1.4643,
+    -1.4643,
+    -1.4793,
+    -1.4793,
+    -1.4943,
+    -1.4943,
+    -1.4693
+  ],
+  "floor_heights_corrected": [
+    -1.4468,
+    -1.4468,
+    -1.4518,
+    -1.4518,
+    -1.4568,
+    -1.4518,
+    -1.4618,
+    -1.4418,
+    -1.4318
+  ]
+}

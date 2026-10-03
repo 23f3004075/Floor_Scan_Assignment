@@ -196,8 +196,17 @@ def _run_lidar(input_path: Path, out: Path, seed: int) -> PropertyPlan:
     console.print("[cyan]Detecting openings...[/cyan]")
     openings = detect_openings(scene, layout)
 
+    console.print("[cyan]Detecting surface damage & evaluating concealed rules...[/cyan]")
+    from floorscan.perception.damage import detect_surface_damage
+    from floorscan.scope.rules_engine import RulesEngine
+    damage_regions = detect_surface_damage(scene, layout, tier=Tier.LIDAR)
+    concealed_flags, scope_items = RulesEngine().evaluate(damage_regions, tier=Tier.LIDAR)
+
     console.print("[cyan]Applying quality gates...[/cyan]")
-    plan = apply_quality_gates(layout, openings, planes, scene, tier=Tier.LIDAR)
+    plan = apply_quality_gates(
+        layout, openings, planes, scene, tier=Tier.LIDAR,
+        damage_regions=damage_regions, concealed_flags=concealed_flags, scope_items=scope_items
+    )
 
     console.print("[cyan]Rendering plan...[/cyan]")
     render_plan(plan, out)

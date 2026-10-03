@@ -48,6 +48,9 @@ def apply_quality_gates(
     floor_ceiling: FloorCeilingResult,
     scene: SceneEvidence,
     tier: Tier = Tier.LIDAR,
+    damage_regions: Optional[list] = None,
+    concealed_flags: Optional[list] = None,
+    scope_items: Optional[list] = None,
 ) -> PropertyPlan:
     """
     Apply quality gates and build the final PropertyPlan.
@@ -130,6 +133,9 @@ def apply_quality_gates(
         floor_area=floor_area,
         ceiling_height=ceiling,
         perimeter=perimeter,
+        damage_regions=damage_regions or [],
+        concealed_damage_flags=concealed_flags or [],
+        scope_items=scope_items or [],
     )
 
     # Build PropertyPlan

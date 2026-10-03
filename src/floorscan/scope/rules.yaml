@@ -1,0 +1,37 @@
+rules:
+  - rule_id: "RULE-WTR-001"
+    trigger_damage_class: "water_stain"
+    surface_type: "ceiling"
+    rule_description: "Ceiling water intrusion: inspect cavity for concealed pipe or roof failure"
+    remediation_description: "Ceiling cavity inspection, insulation replacement, and drywall patch"
+    unit: "m²"
+    area_multiplier: 1.5
+    confidence: 0.85
+
+  - rule_id: "RULE-WTR-002"
+    trigger_damage_class: "water_stain"
+    surface_type: "wall"
+    condition: "near_floor"
+    rule_description: "Base-of-wall water stain: high probability of concealed moisture/mould behind baseboard"
+    remediation_description: "Remove baseboards, cut lower drywall, antimicrobial wash, replace trim"
+    unit: "m"
+    length_multiplier: 1.2
+    confidence: 0.80
+
+  - rule_id: "RULE-MLD-001"
+    trigger_damage_class: "mould"
+    surface_type: "wall"
+    rule_description: "Active microbial growth: requires containment and drywall remediation"
+    remediation_description: "HEPA air scrubbing, removal of contaminated drywall, biocide application"
+    unit: "m²"
+    area_multiplier: 2.0
+    confidence: 0.90
+
+  - rule_id: "RULE-CRK-001"
+    trigger_damage_class: "crack"
+    surface_type: "wall"
+    rule_description: "Wall shear or settling crack: requires V-groove tape repair"
+    remediation_description: "V-groove crack prep, elastomeric filler, mesh tape, and repaint"
+    unit: "m"
+    length_multiplier: 1.0
+    confidence: 0.75
