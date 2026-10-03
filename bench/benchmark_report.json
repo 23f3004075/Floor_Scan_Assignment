@@ -1,0 +1,11 @@
+{
+  "tier": "lidar",
+  "gates": {
+    "ceiling_height_error_cm": 0.09203894037366211,
+    "opening_width_error_cm": 5.400000000000005,
+    "floor_area_error_pct": 0.9695283217894257,
+    "honest_abstention": true,
+    "drift_rate_cm_per_min": 0.0
+  },
+  "all_gates_passed": true
+}

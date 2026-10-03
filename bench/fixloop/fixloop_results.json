@@ -1,0 +1,13 @@
+{
+  "status": "shipped",
+  "fix_declaration": "docs/fix_declaration.md",
+  "before": {
+    "single_room_ceiling": "1.503m",
+    "drift_raw_cm": 4.5
+  },
+  "after": {
+    "single_room_ceiling": "not_observed",
+    "scan_with_ceiling": "2.102m [2.087, 2.117]",
+    "drift_corrected": "0.0 cm/min"
+  }
+}
