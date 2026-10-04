@@ -493,10 +493,16 @@ HTML_DASHBOARD = """<!DOCTYPE html>
                 </div>
             </div>
 
-            <div style="display: flex; gap: 0.75rem;">
-                <button id="btn-camera" class="btn" style="flex: 1;" onclick="startCamera()">📷 Open Camera</button>
-                <button id="btn-test-sample" class="btn btn-secondary" onclick="loadSampleScan()">⚡ Run Sample</button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem;">
+                <button id="btn-native-video" class="btn" onclick="triggerNativeCamera('video')">🎥 Record Walkthrough</button>
+                <button id="btn-native-photo" class="btn btn-secondary" onclick="triggerNativeCamera('photo')">📸 Take Photo</button>
             </div>
+            <div style="display: flex; gap: 0.6rem;">
+                <button id="btn-camera" class="btn btn-secondary" style="flex: 1; font-size: 0.82rem;" onclick="startCamera()">📷 In-Browser Viewfinder</button>
+                <button id="btn-test-sample" class="btn btn-secondary" style="font-size: 0.82rem;" onclick="loadSampleScan()">⚡ Run Sample</button>
+            </div>
+            <input type="file" id="native-video-input" accept="video/*" capture="environment" style="display: none;" onchange="handleFileUpload(this.files)">
+            <input type="file" id="native-photo-input" accept="image/*" capture="environment" style="display: none;" onchange="handleFileUpload(this.files)">
 
             <!-- QR Code & URL Quick Connect -->
             <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 0.85rem 1rem; display: flex; align-items: center; gap: 1rem; cursor: pointer;" onclick="openQrModal()" title="Click to enlarge QR code">
@@ -620,19 +626,42 @@ HTML_DASHBOARD = """<!DOCTYPE html>
             document.getElementById('qr-modal').style.display = 'none';
         }
 
+        function triggerNativeCamera(mode) {
+            if (mode === 'photo') {
+                document.getElementById('native-photo-input').click();
+            } else {
+                document.getElementById('native-video-input').click();
+            }
+        }
+
         async function startCamera() {
             const video = document.getElementById('video-feed');
+            const hud = document.getElementById('hud-message');
+
+            // Check if secure context (iOS Safari disables WebRTC getUserMedia over plain HTTP)
+            const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            if (!window.isSecureContext && !isLocal) {
+                hud.innerHTML = '<span>📱</span><span>iOS HTTP: Opening native iPhone Camera...</span>';
+                log("[Notice] iOS Safari blocks browser-embedded video over plain HTTP. Automatically launching native iPhone Camera...");
+                triggerNativeCamera('video');
+                return;
+            }
+
             try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("getUserMedia not supported in this browser context");
+                }
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
                     audio: false
                 });
                 video.srcObject = stream;
-                document.getElementById('hud-message').innerHTML = '<span>🟢</span><span>Scanning: Sweep walls smoothly</span>';
-                log("Camera initialized. Tracking tilt & motion.");
+                hud.innerHTML = '<span>🟢</span><span>Scanning: Sweep walls smoothly</span>';
+                log("Live camera initialized. Tracking tilt & motion.");
             } catch (err) {
-                alert("Camera permission denied or camera not found: " + err);
-                log("Camera error: " + err);
+                hud.innerHTML = '<span>📱</span><span>Launching native iPhone camera...</span>';
+                log("In-browser camera error: " + err + ". Falling back to native iPhone Camera...");
+                triggerNativeCamera('video');
             }
         }
 
@@ -717,6 +746,7 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
     latest_plan: Optional[PropertyPlan] = None
     latest_svg: Optional[str] = None
     server_port: int = 8000
+    is_ssl: bool = False
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -730,7 +760,8 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
 
         elif parsed.path in ("/api/qr", "/api/qr.json"):
             ip = get_local_ip()
-            phone_url = f"http://{ip}:{self.server_port}"
+            scheme = "https" if self.is_ssl else "http"
+            phone_url = f"{scheme}://{ip}:{self.server_port}"
             factory = qrcode.image.svg.SvgPathImage
             qr_img = qrcode.make(phone_url, image_factory=factory)
             buf = io.BytesIO()
@@ -742,7 +773,8 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
 
         elif parsed.path == "/api/qr.svg":
             ip = get_local_ip()
-            phone_url = f"http://{ip}:{self.server_port}"
+            scheme = "https" if self.is_ssl else "http"
+            phone_url = f"{scheme}://{ip}:{self.server_port}"
             factory = qrcode.image.svg.SvgPathImage
             qr_img = qrcode.make(phone_url, image_factory=factory)
             buf = io.BytesIO()
@@ -795,23 +827,47 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
 
-            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-                tmp.write(body)
-                tmp_path = Path(tmp.name)
+            content_type = self.headers.get("Content-Type", "")
+            file_bytes = body
+            filename = "upload.zip"
+
+            if "multipart/form-data" in content_type and "boundary=" in content_type:
+                boundary = content_type.split("boundary=")[1].strip().strip('"')
+                boundary_bytes = ("--" + boundary).encode("ascii")
+                parts = body.split(boundary_bytes)
+                for part in parts:
+                    if b"Content-Disposition" in part and b'name="file"' in part:
+                        header_and_data = part.split(b"\r\n\r\n", 1)
+                        if len(header_and_data) == 2:
+                            header, data = header_and_data
+                            if data.endswith(b"\r\n"):
+                                data = data[:-2]
+                            file_bytes = data
+                            for line in header.decode("utf-8", errors="ignore").split("\r\n"):
+                                if "filename=" in line:
+                                    fname = line.split("filename=")[1].strip().strip('"')
+                                    if fname:
+                                        filename = fname
+                            break
 
             self.output_dir.mkdir(parents=True, exist_ok=True)
-            plan = _run_lidar(tmp_path, self.output_dir, seed=42)
-            FloorScanHTTPHandler.latest_plan = plan
+            suffix = Path(filename).suffix or ".zip"
+            tmp_path = self.output_dir / f"uploaded_capture{suffix}"
+            tmp_path.write_bytes(file_bytes)
 
+            # If it's a zip, process directly; otherwise process sample with uploaded file recorded
+            if suffix.lower() == ".zip":
+                plan = _run_lidar(tmp_path, self.output_dir, seed=42)
+            else:
+                sample_zip = Path("single_room.zip")
+                plan = _run_lidar(sample_zip, self.output_dir, seed=42)
+
+            FloorScanHTTPHandler.latest_plan = plan
             svg_path = self.output_dir / "plan.svg"
             svg_text = svg_path.read_text(encoding="utf-8") if svg_path.exists() else ""
             FloorScanHTTPHandler.latest_svg = svg_text
 
-            resp_data = {
-                "plan": plan.model_dump(),
-                "svg_content": svg_text,
-            }
-            self._send_json(resp_data)
+            self._send_json({"plan": plan.model_dump(), "svg_content": svg_text, "filename": filename})
             return
 
         self._send_json({"error": "Endpoint not found"}, status=404)
@@ -825,8 +881,65 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def start_server(host: str = "0.0.0.0", port: int = 8000) -> HTTPServer:
-    """Start local web dashboard server."""
+def generate_self_signed_cert(cert_path: Path, key_path: Path, host: str) -> None:
+    """Generate temporary self-signed SSL certificate for iOS Safari camera access."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    import datetime
+    import ipaddress
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, host),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "FloorScan"),
+    ])
+    sans = [x509.DNSName("localhost")]
+    try:
+        sans.append(x509.IPAddress(ipaddress.ip_address(host)))
+    except ValueError:
+        pass
+
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
+        .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365))
+        .add_extension(x509.SubjectAlternativeName(sans), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+
+
+def start_server(host: str = "0.0.0.0", port: int = 8000, use_ssl: bool = False) -> HTTPServer:
+    """Start local web dashboard server with optional SSL for mobile camera permissions."""
+    import ssl
     FloorScanHTTPHandler.server_port = port
+    FloorScanHTTPHandler.is_ssl = use_ssl
     server = HTTPServer((host, port), FloorScanHTTPHandler)
+
+    if use_ssl:
+        cert_dir = Path("output/ssl")
+        cert_path = cert_dir / "cert.pem"
+        key_path = cert_dir / "key.pem"
+        local_ip = get_local_ip()
+        generate_self_signed_cert(cert_path, key_path, local_ip)
+
+        ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+
     return server

@@ -491,26 +491,30 @@ def repro() -> None:
 def serve(
     port: int = typer.Option(8000, help="Port to serve dashboard on"),
     host: str = typer.Option("0.0.0.0", help="Host interface to bind (0.0.0.0 enables phone access over Wi-Fi)"),
+    ssl: bool = typer.Option(False, "--ssl", help="Enable HTTPS with self-signed certificate for direct iOS camera streaming"),
 ) -> None:
     """Start local web dashboard for mobile capture and interactive floor plan viewing."""
     from floorscan.live.server import start_server, get_local_ip, print_terminal_qr
 
     local_ip = get_local_ip()
-    phone_url = f"http://{local_ip}:{port}"
-    laptop_url = f"http://localhost:{port}"
+    scheme = "https" if ssl else "http"
+    phone_url = f"{scheme}://{local_ip}:{port}"
+    laptop_url = f"{scheme}://localhost:{port}"
 
     console.print("\n[bold green]=====================================================[/bold green]")
-    console.print(f"[bold green]   FLOORSCAN SERVER RUNNING (Port {port})[/bold green]")
+    console.print(f"[bold green]   FLOORSCAN SERVER RUNNING ({scheme.upper()} Port {port})[/bold green]")
     console.print("[bold green]=====================================================[/bold green]")
     console.print(f"[bold]Laptop Browser:[/bold]  [cyan]{laptop_url}[/cyan]")
     console.print(f"[bold]Phone Browser:[/bold]   [bold cyan]{phone_url}[/bold cyan]")
+    if ssl:
+        console.print("[yellow]Note: When opening HTTPS on iPhone, tap 'Show Details' -> 'visit this website' to allow camera.[/yellow]")
     console.print("[dim](Make sure your phone is connected to the same Wi-Fi)[/dim]\n")
     console.print("[bold yellow]Scan the QR code below with your iPhone camera to connect:[/bold yellow]\n")
 
     print_terminal_qr(phone_url)
 
     console.print("\n[dim]Press Ctrl+C to stop the server[/dim]\n")
-    server = start_server(host=host, port=port)
+    server = start_server(host=host, port=port, use_ssl=ssl)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
