@@ -490,7 +490,7 @@ def repro() -> None:
 @app.command()
 def serve(
     port: int = typer.Option(8000, help="Port to serve dashboard on"),
-    host: str = typer.Option("127.0.0.1", help="Host interface to bind"),
+    host: str = typer.Option("0.0.0.0", help="Host interface to bind (0.0.0.0 enables phone access over Wi-Fi)"),
 ) -> None:
     """Start local web dashboard for mobile capture and interactive floor plan viewing."""
     from floorscan.live.server import start_server

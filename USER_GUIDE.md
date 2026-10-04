@@ -183,13 +183,51 @@ Audit trail recording the exact version, random seeds, execution duration, and i
 
 ## 7. Scanning New Rooms with Your iPhone
 
-For best results when scanning an unseen physical space, follow the [Operator Capture Protocol](docs/capture_protocol.md):
+You can use your iPhone with `floorscan` in two convenient ways:
 
-1. **App:** Use **Stray Scanner** (free on iOS App Store) on an iPhone 12 Pro–16 Pro or iPad Pro.
-2. **Perimeter Loop:** Stand at the room door, tap record, walk slowly (~0.3 m/s) around the perimeter clockwise at chest height.
-3. **The Ceiling Sweep (Crucial):** At the center of the room, slowly tilt up towards the ceiling, sweep across the ceiling line, and tilt back down.
-4. **Loop Closure:** Always return to the starting doorway threshold before stopping the scan.
-5. **Transfer:** AirDrop or copy the exported `.zip` folder to your laptop and run:
+---
+
+### Method A: Live Mobile Web App (Zero Install - Works in Safari)
+
+Use this mode on any iPhone (iPhone 11 through 16 Pro):
+
+1. **Start the local server on your PC:**
    ```bash
-   python -m floorscan.cli run <your_scan.zip> --out output/my_room
+   python -m floorscan.cli serve
    ```
+2. **Find your PC's local IP address:**
+   - In Windows PowerShell, run: `ipconfig` (look for `IPv4 Address`, e.g. `192.168.1.45`).
+   - In Mac/Linux terminal, run: `ifconfig` or `ip a`.
+3. **Open Safari on your iPhone:**
+   - Make sure your iPhone is connected to the **same Wi-Fi network** as your laptop.
+   - Type into Safari: `http://<your-laptop-ip>:8000` (e.g. `http://192.168.1.45:8000`).
+4. **Scan the Room:**
+   - Tap **"Open Camera"** and grant camera permissions.
+   - The HUD will show you live pitch angle and real-time guidance prompts (`"TILT UP: Sweep up to ceiling"`, `"SLOW DOWN: Moving too fast"`, `"TOO CLOSE"`).
+   - You can also upload any recorded `.mov` video or photos directly from your phone.
+   - Instantly view and download the dimensioned vector floor plan (`plan.svg`) on your phone!
+
+---
+
+### Method B: High-Precision LiDAR Capture (Stray Scanner App)
+
+For sub-centimeter accuracy on **iPhone Pro models (12 Pro, 13 Pro, 14 Pro, 15 Pro, 16 Pro) or iPad Pro**:
+
+1. **Install Stray Scanner:**
+   - Download the free **[Stray Scanner](https://apps.apple.com/app/stray-scanner/id1557051662)** app from the App Store.
+2. **Capture Procedure (60 Seconds):**
+   - Stand at the primary room doorway. Tap **Record**.
+   - Walk slowly (~0.3 m/s) clockwise around the room perimeter at chest height.
+   - **Crucial Step (The Ceiling Sweep):** In the middle of the room, slowly tilt your phone up 60°–75° towards the ceiling, hold for 2 seconds to capture the ceiling plane, then tilt back down.
+   - Complete the perimeter loop and return to the starting doorway threshold. Tap **Stop**.
+3. **Export to PC:**
+   - Tap **Share / Export** in Stray Scanner.
+   - AirDrop, email, or Google Drive the resulting `.zip` folder to your laptop.
+4. **Process with floorscan:**
+   - Drag and drop the `.zip` file into the web dashboard at `http://localhost:8000`, **OR**
+   - Run via terminal:
+     ```bash
+     python -m floorscan.cli run <your_scan.zip> --out output/my_scan
+     ```
+   The engine automatically corrects ARKit odometry drift, fits wall and ceiling planes, detects doors/windows, evaluates damage, and exports `plan.json` and `plan.svg`.
+
