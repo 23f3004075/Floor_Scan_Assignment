@@ -487,5 +487,58 @@ def repro() -> None:
     console.print("[bold green][OK] All reported numbers successfully reproduced from raw inputs![/bold green]")
 
 
+@app.command()
+def serve(
+    port: int = typer.Option(8000, help="Port to serve dashboard on"),
+    host: str = typer.Option("127.0.0.1", help="Host interface to bind"),
+) -> None:
+    """Start local web dashboard for mobile capture and interactive floor plan viewing."""
+    from floorscan.live.server import start_server
+    console.print(f"[bold green]Starting floorscan local web app on http://{host}:{port}[/bold green]")
+    console.print("[cyan]Open this URL on your laptop or phone browser.[/cyan]")
+    server = start_server(host=host, port=port)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Shutting down server...[/yellow]")
+        server.server_close()
+
+
+@app.command()
+def live(
+    mode: str = typer.Option("lidar", help="Live mode (lidar or video)"),
+    source: str = typer.Option("replay:single_room.zip", help="Stream source (e.g. replay:path or websocket)"),
+    out: Path = typer.Option(Path("output/live_session"), help="Output directory"),
+) -> None:
+    """Run live scan processing with real-time operator guidance and final solve."""
+    from floorscan.live.frame_source import StrayScannerSource, ReplayLiveSource
+    from floorscan.live.guidance import GuidanceEngine
+
+    out.mkdir(parents=True, exist_ok=True)
+    console.print(f"[bold blue]Running Live Stream Simulation ({mode} mode from {source})[/bold blue]")
+
+    if source.startswith("replay:"):
+        input_zip = Path(source.split("replay:", 1)[1])
+        base_src = StrayScannerSource(input_zip, max_frames=300)
+        stream = ReplayLiveSource(base_src, playback_rate=10.0)
+    else:
+        raise typer.BadParameter(f"Unsupported stream source: {source}")
+
+    guidance = GuidanceEngine()
+    console.print("[cyan]Streaming frames and calculating operator guidance signals...[/cyan]")
+
+    for idx, frame in enumerate(stream):
+        st = guidance.process_frame(frame)
+        if (idx + 1) % 50 == 0 or idx == stream.total_frames - 1:
+            console.print(
+                f"[frame {idx+1:3d}] Confidence: {st.provisional_confidence*100:.0f}% | "
+                f"Ceiling seen: {st.ceiling_seen} | Prompt: [bold yellow]{st.prompt_message}[/bold yellow]"
+            )
+
+    console.print("[green]Scan complete! Executing deterministic final solve...[/green]")
+    plan = _run_lidar(input_zip, out, seed=42)
+    console.print(f"[bold green][OK] Final floor plan solved and saved to {out / 'plan.json'}[/bold green]")
+
+
 if __name__ == "__main__":
     app()

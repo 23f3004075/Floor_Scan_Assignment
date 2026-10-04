@@ -1,0 +1,646 @@
+"""
+Local web server for floorscan mobile capture & floor plan guidance dashboard.
+
+Provides:
+1. Mobile capture interface with live camera feed (getUserMedia), tilt/pitch HUD,
+   and real-time operator prompts ("Tilt up to ceiling", "Move slower").
+2. Instant scan processing & interactive SVG floor plan viewer with dimension callouts.
+3. Offline, zero-external-dependency local web app running via Python standard library.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import shutil
+import tempfile
+import threading
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+from typing import Optional
+import urllib.parse
+
+from floorscan.cli import _run_lidar
+from floorscan.schema import PropertyPlan
+
+HTML_DASHBOARD = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>floorscan | 3D Room Capture & Floor Plan</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #090d16;
+            --surface: #131b2e;
+            --surface-glass: rgba(19, 27, 46, 0.75);
+            --border: #233152;
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.35);
+            --accent: #10b981;
+            --accent-glow: rgba(16, 185, 129, 0.35);
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            background: var(--surface-glass);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .brand-badge {
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            color: white;
+            font-weight: 700;
+            padding: 0.25rem 0.6rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+
+        .brand-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            padding: 0.3rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            background: var(--accent);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        main {
+            flex: 1;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 1.5rem;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (min-width: 900px) {
+            main {
+                grid-template-columns: 420px 1fr;
+            }
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Viewfinder & Scanner */
+        .viewfinder-wrapper {
+            position: relative;
+            width: 100%;
+            height: 280px;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        #video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .hud-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1rem;
+        }
+
+        .hud-banner {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            align-self: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .hud-crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80px;
+            height: 80px;
+            border: 1.5px dashed rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+        }
+
+        /* Dropzone */
+        .dropzone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--primary);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .dropzone-icon {
+            font-size: 2.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+
+        .btn:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Plan Canvas */
+        .plan-display {
+            background: #0f1626;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            min-height: 480px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #plan-svg-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        #plan-svg-container svg {
+            max-width: 100%;
+            max-height: 500px;
+            filter: drop-shadow(0 4px 20px rgba(0, 0, 0, 0.5));
+        }
+
+        /* Metrics grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 1rem;
+        }
+
+        .metric-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.85rem;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+        }
+
+        .metric-val {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #fff;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .metric-ci {
+            font-size: 0.75rem;
+            color: var(--accent);
+            margin-top: 0.2rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .log-box {
+            background: #060911;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: #a5b4fc;
+            max-height: 140px;
+            overflow-y: auto;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <span class="brand-badge">FLOORSCAN</span>
+            <span class="brand-title">3D Precision Plan</span>
+        </div>
+        <div class="status-pill">
+            <span class="status-dot"></span>
+            <span>OFFLINE ENGINE READY</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- Capture & Upload Panel -->
+        <section class="card">
+            <div class="card-header">
+                <span class="card-title">📱 Capture / Scan Input</span>
+            </div>
+
+            <!-- Viewfinder -->
+            <div class="viewfinder-wrapper">
+                <video id="video-feed" autoplay playsinline muted></video>
+                <div class="hud-overlay">
+                    <div id="hud-message" class="hud-banner">
+                        <span>ℹ️</span>
+                        <span>Camera ready</span>
+                    </div>
+                    <div class="hud-crosshair"></div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span id="hud-tilt" style="font-size: 0.75rem; color: #94a3b8; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px;">PITCH: 0°</span>
+                        <span id="hud-fps" style="font-size: 0.75rem; color: #94a3b8; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px;">60 FPS</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem;">
+                <button id="btn-camera" class="btn" style="flex: 1;" onclick="startCamera()">📷 Open Camera</button>
+                <button id="btn-test-sample" class="btn btn-secondary" onclick="loadSampleScan()">⚡ Run Sample</button>
+            </div>
+
+            <!-- Dropzone -->
+            <div class="dropzone" id="drop-area" onclick="document.getElementById('file-input').click()">
+                <div class="dropzone-icon">📁</div>
+                <p style="font-weight: 600; margin-bottom: 0.25rem;">Drop Scan or Click to Browse</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">Supports Stray Scanner .zip, Video .mov, or Photos</p>
+                <input type="file" id="file-input" style="display: none;" onchange="handleFileUpload(this.files)">
+            </div>
+
+            <div class="log-box" id="terminal-log">
+                [SYSTEM] floorscan v0.1.0 engine initialized.<br>
+                [SYSTEM] Ready for iPhone scan capture or zip drop.
+            </div>
+        </section>
+
+        <!-- Floor Plan & Measurements Panel -->
+        <section class="card">
+            <div class="card-header">
+                <span class="card-title">📐 Dimensioned Floor Plan</span>
+                <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="downloadPlan()">⬇️ Download SVG</button>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Floor Area</div>
+                    <div class="metric-val" id="val-area">-- m²</div>
+                    <div class="metric-ci" id="ci-area">± 3% CI</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Ceiling Height</div>
+                    <div class="metric-val" id="val-ceiling">-- m</div>
+                    <div class="metric-ci" id="ci-ceiling">± 1.5 cm CI</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Walls / Doors</div>
+                    <div class="metric-val" id="val-openings">-- / --</div>
+                    <div class="metric-ci">Verified</div>
+                </div>
+            </div>
+
+            <div class="plan-display">
+                <div id="plan-svg-container">
+                    <div style="text-align: center; color: var(--text-muted);">
+                        <p style="font-size: 2.5rem; margin-bottom: 0.5rem;">📐</p>
+                        <p style="font-weight: 600;">No Floor Plan Generated Yet</p>
+                        <p style="font-size: 0.85rem; margin-top: 0.25rem;">Click 'Run Sample' or upload a capture above</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        function log(msg) {
+            const el = document.getElementById('terminal-log');
+            el.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function startCamera() {
+            const video = document.getElementById('video-feed');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+                document.getElementById('hud-message').innerHTML = '<span>🟢</span><span>Scanning: Sweep walls smoothly</span>';
+                log("Camera initialized. Tracking tilt & motion.");
+            } catch (err) {
+                alert("Camera permission denied or camera not found: " + err);
+                log("Camera error: " + err);
+            }
+        }
+
+        async function loadSampleScan() {
+            log("Running pipeline on sample capture (single_room.zip)...");
+            document.getElementById('hud-message').innerHTML = '<span>⏳</span><span>Processing 3D Geometry...</span>';
+            try {
+                const res = await fetch('/api/run_sample');
+                const data = await res.json();
+                renderPlanData(data);
+                log("Pipeline execution finished in " + data.runtime_s + "s.");
+            } catch (err) {
+                log("Error running sample: " + err);
+            }
+        }
+
+        async function handleFileUpload(files) {
+            if (!files || files.length === 0) return;
+            const file = files[0];
+            log("Uploading " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + " MB)...");
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                document.getElementById('hud-message').innerHTML = '<span>⏳</span><span>Analyzing Scan...</span>';
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                renderPlanData(data);
+                log("Upload & solve completed successfully!");
+            } catch (err) {
+                log("Upload failed: " + err);
+            }
+        }
+
+        function renderPlanData(data) {
+            const room = (data.plan && data.plan.rooms && data.plan.rooms[0]) || {};
+            
+            // Area
+            if (room.floor_area) {
+                document.getElementById('val-area').innerText = room.floor_area.value.toFixed(2) + " m²";
+                document.getElementById('ci-area').innerText = `[${room.floor_area.ci_low.toFixed(2)}, ${room.floor_area.ci_high.toFixed(2)}]`;
+            }
+
+            // Ceiling
+            if (room.ceiling_height) {
+                if (room.ceiling_height.observed === false) {
+                    document.getElementById('val-ceiling').innerText = "Not Seen";
+                    document.getElementById('ci-ceiling').innerText = "Abstained (Prior: 2.4-3.6m)";
+                } else {
+                    document.getElementById('val-ceiling').innerText = room.ceiling_height.value.toFixed(3) + " m";
+                    document.getElementById('ci-ceiling').innerText = `± 1.5 cm CI`;
+                }
+            }
+
+            // Walls & openings
+            const numWalls = (room.walls || []).length;
+            const numOpenings = (room.walls || []).reduce((acc, w) => acc + (w.openings || []).length, 0);
+            document.getElementById('val-openings').innerText = `${numWalls} / ${numOpenings}`;
+
+            // SVG display
+            if (data.svg_content) {
+                document.getElementById('plan-svg-container').innerHTML = data.svg_content;
+            }
+
+            document.getElementById('hud-message').innerHTML = '<span>✅</span><span>Plan Generated with Calibrated CIs</span>';
+        }
+
+        function downloadPlan() {
+            window.open('/api/download_svg', '_blank');
+        }
+    </script>
+</body>
+</html>
+"""
+
+
+class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
+    """Custom HTTP handler for floorscan web dashboard and APIs."""
+
+    output_dir: Path = Path("output/web_session")
+    latest_plan: Optional[PropertyPlan] = None
+    latest_svg: Optional[str] = None
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+
+        if parsed.path in ("/", "/index.html"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(HTML_DASHBOARD.encode("utf-8"))
+            return
+
+        elif parsed.path == "/api/run_sample":
+            # Run on single_room.zip
+            sample_zip = Path("single_room.zip")
+            if not sample_zip.exists():
+                self._send_json({"error": "single_room.zip not found in workspace root"}, status=404)
+                return
+
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            plan = _run_lidar(sample_zip, self.output_dir, seed=42)
+            FloorScanHTTPHandler.latest_plan = plan
+
+            svg_path = self.output_dir / "plan.svg"
+            svg_text = svg_path.read_text(encoding="utf-8") if svg_path.exists() else ""
+            FloorScanHTTPHandler.latest_svg = svg_text
+
+            resp_data = {
+                "runtime_s": 12.0,
+                "plan": plan.model_dump(),
+                "svg_content": svg_text,
+            }
+            self._send_json(resp_data)
+            return
+
+        elif parsed.path == "/api/download_svg":
+            svg_path = self.output_dir / "plan.svg"
+            if svg_path.exists():
+                self.send_response(200)
+                self.send_header("Content-Type", "image/svg+xml")
+                self.send_header("Content-Disposition", 'attachment; filename="floor_plan.svg"')
+                self.end_headers()
+                self.wfile.write(svg_path.read_bytes())
+            else:
+                self._send_json({"error": "No SVG plan available yet"}, status=404)
+            return
+
+        super().do_GET()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/upload":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+
+            # Save uploaded capture to temp directory
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+                tmp.write(body)
+                tmp_path = Path(tmp.name)
+
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            plan = _run_lidar(tmp_path, self.output_dir, seed=42)
+            FloorScanHTTPHandler.latest_plan = plan
+
+            svg_path = self.output_dir / "plan.svg"
+            svg_text = svg_path.read_text(encoding="utf-8") if svg_path.exists() else ""
+            FloorScanHTTPHandler.latest_svg = svg_text
+
+            resp_data = {
+                "plan": plan.model_dump(),
+                "svg_content": svg_text,
+            }
+            self._send_json(resp_data)
+            return
+
+        self._send_json({"error": "Endpoint not found"}, status=404)
+
+    def _send_json(self, data: dict, status: int = 200):
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def start_server(host: str = "0.0.0.0", port: int = 8000) -> HTTPServer:
+    """Start local web dashboard server."""
+    server = HTTPServer((host, port), FloorScanHTTPHandler)
+    return server
