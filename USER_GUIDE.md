@@ -49,11 +49,16 @@ To launch the web interface with live camera viewfinder, real-time guidance prom
 python -m floorscan.cli serve
 ```
 
-### Accessing the Dashboard:
-1. Open your browser and navigate to:  
-   👉 **`http://localhost:8000`**
-2. **On your iPhone (same Wi-Fi network):**  
-   Find your laptop's local IP address (e.g. `192.168.1.15`), and navigate to `http://192.168.1.15:8000` on mobile Safari.
+### Starting the Server:
+```bash
+python -m floorscan.cli serve
+```
+
+When started, `floorscan` automatically resolves your laptop's local IP address and displays:
+1. **Laptop URL:** `http://localhost:8000`
+2. **Phone URL:** `http://<your-ip>:8000` (e.g. `http://192.168.0.194:8000`)
+3. **Scannable Terminal QR Code:** Point your iPhone camera directly at your laptop's terminal to open the app instantly without typing any IP address!
+4. **Dashboard QR Button:** If viewing on your laptop browser, click the **"📱 Connect Phone (QR)"** button in the top navigation bar to open a QR code popup.
 
 ### Dashboard Features:
 - **⚡ Run Sample:** Click the button to immediately run `single_room.zip` through the pipeline and view the generated floor plan with wall dimensions, floor area, and ceiling height in real time.

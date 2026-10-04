@@ -5,7 +5,8 @@ Provides:
 1. Mobile capture interface with live camera feed (getUserMedia), tilt/pitch HUD,
    and real-time operator prompts ("Tilt up to ceiling", "Move slower").
 2. Instant scan processing & interactive SVG floor plan viewer with dimension callouts.
-3. Offline, zero-external-dependency local web app running via Python standard library.
+3. QR code generator in terminal and on dashboard for zero-friction phone connection.
+4. Offline, zero-external-dependency local web app running via Python standard library.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ import io
 import json
 import os
 import shutil
+import socket
+import sys
 import tempfile
 import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -21,8 +24,43 @@ from pathlib import Path
 from typing import Optional
 import urllib.parse
 
+import qrcode
+import qrcode.image.svg
+
 from floorscan.cli import _run_lidar
 from floorscan.schema import PropertyPlan
+
+
+def get_local_ip() -> str:
+    """Resolve local LAN IP address of this machine."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
+
+
+def print_terminal_qr(url: str) -> None:
+    """Print an ASCII QR code safely into the terminal."""
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url)
+    try:
+        matrix = qr.get_matrix()
+        for row in matrix:
+            # Use block characters written directly as UTF-8 bytes to stdout buffer
+            line = "".join("██" if cell else "  " for cell in row)
+            sys.stdout.buffer.write((line + "\n").encode("utf-8"))
+        sys.stdout.buffer.flush()
+    except Exception:
+        # Fallback to ASCII hash
+        for row in qr.get_matrix():
+            line = "".join("##" if cell else "  " for cell in row)
+            print(line)
+
 
 HTML_DASHBOARD = """<!DOCTYPE html>
 <html lang="en">
@@ -69,13 +107,15 @@ HTML_DASHBOARD = """<!DOCTYPE html>
             background: var(--surface-glass);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--border);
-            padding: 1rem 1.5rem;
+            padding: 0.85rem 1.5rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
             position: sticky;
             top: 0;
             z-index: 50;
+            flex-wrap: wrap;
+            gap: 0.75rem;
         }
 
         .brand {
@@ -102,6 +142,12 @@ HTML_DASHBOARD = """<!DOCTYPE html>
             background: linear-gradient(to right, #fff, #94a3b8);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
         .status-pill {
@@ -282,6 +328,12 @@ HTML_DASHBOARD = """<!DOCTYPE html>
             background: rgba(255, 255, 255, 0.1);
         }
 
+        .btn-sm {
+            padding: 0.45rem 0.85rem;
+            font-size: 0.82rem;
+            border-radius: 8px;
+        }
+
         /* Plan Canvas */
         .plan-display {
             background: #0f1626;
@@ -358,6 +410,48 @@ HTML_DASHBOARD = """<!DOCTYPE html>
             overflow-y: auto;
             line-height: 1.4;
         }
+
+        /* QR Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            padding: 1rem;
+        }
+
+        .modal-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 380px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .qr-wrapper {
+            background: #fff;
+            padding: 1rem;
+            border-radius: 12px;
+            display: inline-block;
+            margin: 0 auto;
+            max-width: 240px;
+        }
+
+        .qr-wrapper svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -367,9 +461,12 @@ HTML_DASHBOARD = """<!DOCTYPE html>
             <span class="brand-badge">FLOORSCAN</span>
             <span class="brand-title">3D Precision Plan</span>
         </div>
-        <div class="status-pill">
-            <span class="status-dot"></span>
-            <span>OFFLINE ENGINE READY</span>
+        <div class="header-actions">
+            <button class="btn btn-secondary btn-sm" onclick="openQrModal()">📱 Connect Phone (QR)</button>
+            <div class="status-pill">
+                <span class="status-dot"></span>
+                <span>ENGINE READY</span>
+            </div>
         </div>
     </header>
 
@@ -419,7 +516,7 @@ HTML_DASHBOARD = """<!DOCTYPE html>
         <section class="card">
             <div class="card-header">
                 <span class="card-title">📐 Dimensioned Floor Plan</span>
-                <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="downloadPlan()">⬇️ Download SVG</button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadPlan()">⬇️ Download SVG</button>
             </div>
 
             <div class="metrics-grid">
@@ -452,11 +549,43 @@ HTML_DASHBOARD = """<!DOCTYPE html>
         </section>
     </main>
 
+    <!-- QR Code Connection Modal -->
+    <div class="modal-overlay" id="qr-modal" onclick="closeQrModal(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <h3 style="font-size: 1.2rem; color: #fff;">📱 Open App on Phone</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">Point your iPhone Camera at this QR code to open the app instantly:</p>
+            <div class="qr-wrapper" id="qr-code-img">
+                <!-- SVG QR loaded dynamically -->
+                Loading QR...
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--primary);" id="qr-url-text">
+                http://...
+            </div>
+            <button class="btn btn-secondary" style="width: 100%;" onclick="closeQrModal()">Close</button>
+        </div>
+    </div>
+
     <script>
         function log(msg) {
             const el = document.getElementById('terminal-log');
             el.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
             el.scrollTop = el.scrollHeight;
+        }
+
+        async function openQrModal() {
+            document.getElementById('qr-modal').style.display = 'flex';
+            try {
+                const res = await fetch('/api/qr');
+                const data = await res.json();
+                document.getElementById('qr-code-img').innerHTML = data.svg;
+                document.getElementById('qr-url-text').innerText = data.url;
+            } catch (err) {
+                console.error("Failed to load QR: " + err);
+            }
+        }
+
+        function closeQrModal() {
+            document.getElementById('qr-modal').style.display = 'none';
         }
 
         async function startCamera() {
@@ -555,6 +684,7 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
     output_dir: Path = Path("output/web_session")
     latest_plan: Optional[PropertyPlan] = None
     latest_svg: Optional[str] = None
+    server_port: int = 8000
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -566,8 +696,19 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
             self.wfile.write(HTML_DASHBOARD.encode("utf-8"))
             return
 
+        elif parsed.path == "/api/qr":
+            ip = get_local_ip()
+            phone_url = f"http://{ip}:{self.server_port}"
+            factory = qrcode.image.svg.SvgPathImage
+            qr_img = qrcode.make(phone_url, image_factory=factory)
+            buf = io.BytesIO()
+            qr_img.save(buf)
+            svg_text = buf.getvalue().decode("utf-8")
+
+            self._send_json({"url": phone_url, "svg": svg_text})
+            return
+
         elif parsed.path == "/api/run_sample":
-            # Run on single_room.zip
             sample_zip = Path("single_room.zip")
             if not sample_zip.exists():
                 self._send_json({"error": "single_room.zip not found in workspace root"}, status=404)
@@ -609,7 +750,6 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
 
-            # Save uploaded capture to temp directory
             with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
                 tmp.write(body)
                 tmp_path = Path(tmp.name)
@@ -642,5 +782,6 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
 
 def start_server(host: str = "0.0.0.0", port: int = 8000) -> HTTPServer:
     """Start local web dashboard server."""
+    FloorScanHTTPHandler.server_port = port
     server = HTTPServer((host, port), FloorScanHTTPHandler)
     return server

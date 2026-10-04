@@ -493,9 +493,23 @@ def serve(
     host: str = typer.Option("0.0.0.0", help="Host interface to bind (0.0.0.0 enables phone access over Wi-Fi)"),
 ) -> None:
     """Start local web dashboard for mobile capture and interactive floor plan viewing."""
-    from floorscan.live.server import start_server
-    console.print(f"[bold green]Starting floorscan local web app on http://{host}:{port}[/bold green]")
-    console.print("[cyan]Open this URL on your laptop or phone browser.[/cyan]")
+    from floorscan.live.server import start_server, get_local_ip, print_terminal_qr
+
+    local_ip = get_local_ip()
+    phone_url = f"http://{local_ip}:{port}"
+    laptop_url = f"http://localhost:{port}"
+
+    console.print("\n[bold green]=====================================================[/bold green]")
+    console.print(f"[bold green]   FLOORSCAN SERVER RUNNING (Port {port})[/bold green]")
+    console.print("[bold green]=====================================================[/bold green]")
+    console.print(f"[bold]Laptop Browser:[/bold]  [cyan]{laptop_url}[/cyan]")
+    console.print(f"[bold]Phone Browser:[/bold]   [bold cyan]{phone_url}[/bold cyan]")
+    console.print("[dim](Make sure your phone is connected to the same Wi-Fi)[/dim]\n")
+    console.print("[bold yellow]Scan the QR code below with your iPhone camera to connect:[/bold yellow]\n")
+
+    print_terminal_qr(phone_url)
+
+    console.print("\n[dim]Press Ctrl+C to stop the server[/dim]\n")
     server = start_server(host=host, port=port)
     try:
         server.serve_forever()
