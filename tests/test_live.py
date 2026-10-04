@@ -30,3 +30,25 @@ def test_frame_source_and_guidance():
     # Since single_room.zip never tilted up to the ceiling, guidance must prompt to tilt up!
     assert not last_status.ceiling_seen
     assert "TILT UP" in last_status.prompt_message or not last_status.ceiling_seen
+
+
+def test_qr_code_generation():
+    """Verify QR code generation in SVG and matrix format."""
+    from floorscan.live.server import get_local_ip
+    import qrcode
+    import qrcode.image.svg
+
+    ip = get_local_ip()
+    assert ip is not None
+    url = f"http://{ip}:8000"
+
+    factory = qrcode.image.svg.SvgPathImage
+    img = qrcode.make(url, image_factory=factory)
+    assert img is not None
+
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url)
+    matrix = qr.get_matrix()
+    assert len(matrix) > 20
+    assert len(matrix[0]) > 20
+

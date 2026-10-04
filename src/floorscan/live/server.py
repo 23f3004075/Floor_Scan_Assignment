@@ -498,6 +498,21 @@ HTML_DASHBOARD = """<!DOCTYPE html>
                 <button id="btn-test-sample" class="btn btn-secondary" onclick="loadSampleScan()">⚡ Run Sample</button>
             </div>
 
+            <!-- QR Code & URL Quick Connect -->
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 0.85rem 1rem; display: flex; align-items: center; gap: 1rem; cursor: pointer;" onclick="openQrModal()" title="Click to enlarge QR code">
+                <div id="inline-qr-box" style="background: #fff; padding: 4px; border-radius: 8px; width: 72px; height: 72px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                    <span style="font-size: 0.65rem; color: #64748b;">Loading QR...</span>
+                </div>
+                <div style="flex: 1; min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.2rem;">
+                        <span style="font-size: 0.85rem; font-weight: 700; color: #fff;">📱 Connect iPhone</span>
+                        <span style="font-size: 0.7rem; background: var(--primary-glow); color: var(--primary); padding: 1px 5px; border-radius: 4px; font-weight: 600;">LIVE</span>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.3rem;">Scan QR with Camera or open:</div>
+                    <a id="inline-qr-url" href="#" target="_blank" onclick="event.stopPropagation()" style="font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; color: var(--primary); text-decoration: none; word-break: break-all; font-weight: 600; display: block;">http://...</a>
+                </div>
+            </div>
+
             <!-- Dropzone -->
             <div class="dropzone" id="drop-area" onclick="document.getElementById('file-input').click()">
                 <div class="dropzone-icon">📁</div>
@@ -566,6 +581,23 @@ HTML_DASHBOARD = """<!DOCTYPE html>
     </div>
 
     <script>
+        // Load QR Code and URL automatically on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res = await fetch('/api/qr');
+                const data = await res.json();
+                const inlineBox = document.getElementById('inline-qr-box');
+                const inlineUrl = document.getElementById('inline-qr-url');
+                if (inlineBox && data.svg) {
+                    inlineBox.innerHTML = data.svg;
+                    inlineUrl.href = data.url;
+                    inlineUrl.innerText = data.url;
+                }
+            } catch (err) {
+                console.error("Failed to load initial QR:", err);
+            }
+        });
+
         function log(msg) {
             const el = document.getElementById('terminal-log');
             el.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -696,7 +728,7 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
             self.wfile.write(HTML_DASHBOARD.encode("utf-8"))
             return
 
-        elif parsed.path == "/api/qr":
+        elif parsed.path in ("/api/qr", "/api/qr.json"):
             ip = get_local_ip()
             phone_url = f"http://{ip}:{self.server_port}"
             factory = qrcode.image.svg.SvgPathImage
@@ -706,6 +738,19 @@ class FloorScanHTTPHandler(SimpleHTTPRequestHandler):
             svg_text = buf.getvalue().decode("utf-8")
 
             self._send_json({"url": phone_url, "svg": svg_text})
+            return
+
+        elif parsed.path == "/api/qr.svg":
+            ip = get_local_ip()
+            phone_url = f"http://{ip}:{self.server_port}"
+            factory = qrcode.image.svg.SvgPathImage
+            qr_img = qrcode.make(phone_url, image_factory=factory)
+            buf = io.BytesIO()
+            qr_img.save(buf)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.end_headers()
+            self.wfile.write(buf.getvalue())
             return
 
         elif parsed.path == "/api/run_sample":

@@ -58,7 +58,18 @@ When started, `floorscan` automatically resolves your laptop's local IP address 
 1. **Laptop URL:** `http://localhost:8000`
 2. **Phone URL:** `http://<your-ip>:8000` (e.g. `http://192.168.0.194:8000`)
 3. **Scannable Terminal QR Code:** Point your iPhone camera directly at your laptop's terminal to open the app instantly without typing any IP address!
-4. **Dashboard QR Button:** If viewing on your laptop browser, click the **"📱 Connect Phone (QR)"** button in the top navigation bar to open a QR code popup.
+4. **Interactive Dashboard QR Widget:** An inline QR code and phone link appear directly in the left sidebar under the camera buttons, with one-tap enlargement.
+5. **Dashboard QR Button:** Click the **"📱 Connect Phone (QR)"** button in the top navigation bar to open the dedicated full-size QR modal.
+
+### Generating Standalone QR Code & URL:
+If you want to view or export the QR code along with the connection URL at any time without keeping the server running in that shell:
+```bash
+python -m floorscan.cli qr
+```
+This prints the ASCII QR code and local network URL directly into your console, and automatically saves a vector QR code image to `output/qr.svg`! You can also specify a custom port or output path:
+```bash
+python -m floorscan.cli qr --port 8000 --save output/my_qr.svg
+```
 
 ### Dashboard Features:
 - **⚡ Run Sample:** Click the button to immediately run `single_room.zip` through the pipeline and view the generated floor plan with wall dimensions, floor area, and ceiling height in real time.

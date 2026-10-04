@@ -519,6 +519,38 @@ def serve(
 
 
 @app.command()
+def qr(
+    port: int = typer.Option(8000, help="Port to generate URL and QR code for"),
+    save: Optional[Path] = typer.Option(None, help="Optional filepath to save SVG QR code (e.g. qr.svg)"),
+) -> None:
+    """Generate and display mobile connection URL along with its scannable QR code."""
+    from floorscan.live.server import get_local_ip, print_terminal_qr
+    import qrcode
+    import qrcode.image.svg
+
+    local_ip = get_local_ip()
+    phone_url = f"http://{local_ip}:{port}"
+    laptop_url = f"http://localhost:{port}"
+
+    console.print("\n[bold green]=====================================================[/bold green]")
+    console.print(f"[bold green]   FLOORSCAN MOBILE CONNECTION QR & URL[/bold green]")
+    console.print("[bold green]=====================================================[/bold green]")
+    console.print(f"[bold]Phone Web App URL:[/bold] [bold cyan]{phone_url}[/bold cyan]")
+    console.print(f"[bold]Laptop Local URL:[/bold]  [cyan]{laptop_url}[/cyan]\n")
+    console.print("[bold yellow]Scan the QR code below with your iPhone camera:[/bold yellow]\n")
+
+    print_terminal_qr(phone_url)
+
+    out_path = save if save is not None else Path("output/qr.svg")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    factory = qrcode.image.svg.SvgPathImage
+    img = qrcode.make(phone_url, image_factory=factory)
+    img.save(str(out_path))
+    console.print(f"\n[green][OK] Vector QR code saved to:[/green] [bold]{out_path}[/bold]")
+    console.print(f"[dim]Tip: You can also open the URL directly or scan this terminal code.[/dim]\n")
+
+
+@app.command()
 def live(
     mode: str = typer.Option("lidar", help="Live mode (lidar or video)"),
     source: str = typer.Option("replay:single_room.zip", help="Stream source (e.g. replay:path or websocket)"),
