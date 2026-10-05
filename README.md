@@ -12,8 +12,8 @@
 
 ### 1. Clone & Install
 ```bash
-git clone https://github.com/<user>/floorscan.git
-cd floorscan
+git clone https://github.com/23f3004075/Floor_Scan_Assignment.git
+cd Floor_Scan_Assignment
 pip install -e .
 ```
 
