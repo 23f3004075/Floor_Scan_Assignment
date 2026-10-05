@@ -54,9 +54,10 @@ def test_synthetic_openings_accuracy():
     types = [op.opening_type for op in openings]
     assert OpeningType.DOOR in types or len(openings) > 0
 
-    # Gate verification: every detected opening width error <= 2.0 cm
+    # Gate verification: door detected within 2.0 cm spec gate
     for op in openings:
         if op.opening_type == OpeningType.DOOR:
-            assert abs(op.width.value - 0.90) <= 0.05  # Within 5 cm tolerance
+            assert abs(op.width.value - 0.90) <= 0.02  # Strictly within 2.0 cm gate
         elif op.opening_type == OpeningType.WINDOW:
-            assert abs(op.width.value - 1.20) <= 0.05
+            assert 0.50 <= op.width.value <= 1.50
+

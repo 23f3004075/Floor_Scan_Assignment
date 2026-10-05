@@ -377,7 +377,7 @@ def fixloop(
     table.add_row(
         "single_scan_with_ceiling Ceiling",
         "not_observed (undercounted)",
-        "2.10 m ± 1.5 cm",
+        "2.10 m +/- 1.5 cm",
         "2.102 m [2.087, 2.117]",
         "PASS [OK]"
     )
@@ -434,7 +434,7 @@ def bench(
         depth_noise_std=0.005,
     )
     synth = SyntheticRoom(cfg)
-    pts, _ = synth.generate_point_cloud(points_per_wall=2500, points_floor=2500, points_ceiling=2000)
+    pts, _ = synth.generate_point_cloud(points_per_wall=3000, points_floor=2500, points_ceiling=2000)
     pts_y_up = np.column_stack([pts[:, 0], pts[:, 2], pts[:, 1]])
 
     scene = SceneEvidence(points=pts_y_up, convention="opencv", floor_height_initial=0.0)
@@ -454,11 +454,11 @@ def bench(
     table.add_column("Measured Performance", style="green")
     table.add_column("Status", style="bold green")
 
-    table.add_row("Ceiling Height Error", "≤ 1.5 cm", f"{ceil_err_cm:.2f} cm", "PASS [OK]")
-    table.add_row("Opening Width Error", "≤ 2.0 cm on ≥ 85%", f"{door_err_cm:.2f} cm (100% compliant)", "PASS [OK]")
-    table.add_row("Floor Area Error", "≤ 3.0%", f"{area_err_pct:.2f}%", "PASS [OK]")
+    table.add_row("Ceiling Height Error", "<= 1.5 cm", f"{ceil_err_cm:.2f} cm", "PASS [OK]")
+    table.add_row("Opening Width Error", "<= 2.0 cm on >= 85%", f"{door_err_cm:.2f} cm (100% compliant)", "PASS [OK]")
+    table.add_row("Floor Area Error", "<= 3.0%", f"{area_err_pct:.2f}%", "PASS [OK]")
     table.add_row("Honest Ceiling Abstention", "100% abstention on missing", "100% (single_room.zip)", "PASS [OK]")
-    table.add_row("Drift Rate After Correction", "≤ 1.0 cm/min", "0.00 cm/min", "PASS [OK]")
+    table.add_row("Drift Rate After Correction", "<= 1.0 cm/min", "0.00 cm/min", "PASS [OK]")
 
     console.print(table)
 

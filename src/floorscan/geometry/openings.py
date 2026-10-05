@@ -22,7 +22,7 @@ def detect_openings(
     scene: SceneEvidence,
     layout: LayoutResult,
     wall_proximity_m: float = 0.15,
-    bin_size_m: float = 0.05,
+    bin_size_m: float = 0.02,
     min_door_width_m: float = 0.60,
     max_door_width_m: float = 2.20,
     min_window_width_m: float = 0.50,
