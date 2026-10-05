@@ -8,7 +8,7 @@
 
 ---
 
-## 🚀 Quickstart (< 10 Minutes from Scratch)
+## Quickstart (< 10 Minutes from Scratch)
 
 ### 1. Clone & Install
 ```bash
@@ -29,7 +29,7 @@ Outputs generated in `output/my_scan/`:
 
 ---
 
-## 📊 Core Verification Commands
+## Core Verification Commands
 
 All reported benchmarks and experimental claims can be reproduced directly from raw inputs with zero network access:
 
@@ -52,20 +52,20 @@ floorscan schema --out schema/floorscan_schema.json
 
 ---
 
-## 🎯 Benchmark Performance vs Specification Gates
+## Benchmark Performance vs Specification Gates
 
 | Specification Gate | Metric Target | Measured Performance | Verification Method | Status |
 |---|---|---|---|---|
-| **Ceiling Height Gate** | Error ≤ 1.5 cm | **0.09 cm** error | Synthetic ground truth | **PASS [OK]** |
-| **Opening Width Gate** | Error ≤ 2.0 cm on ≥ 85% | **100% compliant** | Ray-plane occupancy intersection | **PASS [OK]** |
-| **Floor Area Gate** | Error ≤ 3.0% | **0.97%** error | Polygon intersection | **PASS [OK]** |
+| **Ceiling Height Gate** | Error <= 1.5 cm | **0.10 cm** error | Synthetic ground truth | **PASS [OK]** |
+| **Opening Width Gate** | Error <= 2.0 cm on >= 85% | **0.30 cm** error (100% compliant) | Ray-plane occupancy intersection | **PASS [OK]** |
+| **Floor Area Gate** | Error <= 3.0% | **1.14%** error | Polygon intersection | **PASS [OK]** |
 | **Honest Ceiling Abstention** | 100% abstention on unobserved | **100%** on `single_room.zip` | Evidence gate (>2.1m check) | **PASS [OK]** |
-| **ARKit Vertical Drift** | Drift rate ≤ 1.0 cm/min | **0.00 cm/min** after fix | Windowed floor re-anchoring | **PASS [OK]** |
+| **ARKit Vertical Drift** | Drift rate <= 1.0 cm/min | **0.00 cm/min** after fix | Windowed floor re-anchoring | **PASS [OK]** |
 | **Deterministic Execution** | Bit-for-bit identical outputs | **100%** identical hashes | Fixed PRNG seeds & sorting | **PASS [OK]** |
 
 ---
 
-## 🛠️ System Architecture
+## System Architecture
 
 ```mermaid
 graph TD
@@ -85,7 +85,7 @@ graph TD
 
 ---
 
-## 📖 Essential Documentation
+## Essential Documentation
 
 - [Live Defense Guide (DEFENSE.md)](docs/DEFENSE.md): Complete Q&A for live defense with tools closed.
 - [Architectural Decisions Ledger (DECISIONS.md)](docs/DECISIONS.md): Numerical decision records following reasoning protocol.
@@ -98,7 +98,7 @@ graph TD
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Run the automated test suite:
 ```bash
@@ -111,5 +111,5 @@ tests/test_golden_captures.py ..  [PASS]
 tests/test_live.py ..             [PASS]
 tests/test_openings.py ..         [PASS]
 tests/test_schema.py ..           [PASS]
-6 passed in 2.78s
+7 passed in 2.12s
 ```

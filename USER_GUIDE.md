@@ -4,7 +4,7 @@ A complete, step-by-step guide on how to launch, configure, and use `floorscan`�
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
 1. [System Prerequisites & Installation](#1-system-prerequisites--installation)
 2. [Starting the Interactive Web Dashboard (`floorscan serve`)](#2-starting-the-interactive-web-dashboard)
@@ -49,17 +49,12 @@ To launch the web interface with live camera viewfinder, real-time guidance prom
 python -m floorscan.cli serve
 ```
 
-### Starting the Server:
-```bash
-python -m floorscan.cli serve
-```
-
 When started, `floorscan` automatically resolves your laptop's local IP address and displays:
 1. **Laptop URL:** `http://localhost:8000`
 2. **Phone URL:** `http://<your-ip>:8000` (e.g. `http://192.168.0.194:8000`)
-3. **Scannable Terminal QR Code:** Point your iPhone camera directly at your laptop's terminal to open the app instantly without typing any IP address!
+3. **Scannable Terminal QR Code:** Point your phone camera directly at your laptop's terminal to open the app instantly without typing any IP address!
 4. **Interactive Dashboard QR Widget:** An inline QR code and phone link appear directly in the left sidebar under the camera buttons, with one-tap enlargement.
-5. **Dashboard QR Button:** Click the **"📱 Connect Phone (QR)"** button in the top navigation bar to open the dedicated full-size QR modal.
+5. **Dashboard QR Button:** Click the **"Connect Phone (QR)"** button in the top navigation bar to open the dedicated full-size QR modal.
 
 ### Generating Standalone QR Code & URL:
 If you want to view or export the QR code along with the connection URL at any time without keeping the server running in that shell:
@@ -72,10 +67,10 @@ python -m floorscan.cli qr --port 8000 --save output/my_qr.svg
 ```
 
 ### Dashboard Features:
-- **⚡ Run Sample:** Click the button to immediately run `single_room.zip` through the pipeline and view the generated floor plan with wall dimensions, floor area, and ceiling height in real time.
-- **📁 Drag-and-Drop Uploader:** Drop any Stray Scanner `.zip`, video file, or photo folder to process it automatically.
-- **📷 Camera Viewfinder:** Tap "Open Camera" to activate your device camera with live tilt/pitch HUD overlays and real-time guidance prompts ("Tilt up to ceiling", "Slow down", "Scanning...").
-- **📐 Interactive Dimensioned Plan:** View the clean vector SVG floor plan with room boundaries, wall lengths, and confidence intervals. Click **"Download SVG"** to export.
+- **Run Sample:** Click the button to immediately run `single_room.zip` through the pipeline and view the generated floor plan with wall dimensions, floor area, and ceiling height in real time.
+- **Drag-and-Drop Uploader:** Drop any Stray Scanner `.zip`, video file, or photo folder to process it automatically.
+- **Camera Viewfinder:** Tap "Open Camera" to activate your device camera with live tilt/pitch HUD overlays and real-time guidance prompts ("Tilt up to ceiling", "Slow down", "Scanning...").
+- **Interactive Dimensioned Plan:** View the clean vector SVG floor plan with room boundaries, wall lengths, and confidence intervals. Click **"Download SVG"** to export.
 
 ---
 
@@ -93,21 +88,21 @@ python -m floorscan.cli run single_room.zip --out output/my_scan
 # Test floor-only scan (accurately abstains from unobserved ceiling)
 python -m floorscan.cli run single_scan_floor_only.zip --out output/scan_floor_only
 
-# Test scan with full ceiling sweep (directly measures 2.102m ceiling ± 1.5 cm)
+# Test scan with full ceiling sweep (directly measures 2.102m ceiling +/- 1.5 cm)
 python -m floorscan.cli run single_scan_with_ceiling.zip --out output/scan_with_ceiling
 ```
 
 ### Summary Output Example:
 ```
                          Floor Plan Summary                         
-┌──────────┬───────────────────────────────────────────────────────┐
-│ Property │ Value                                                 │
-├──────────┼───────────────────────────────────────────────────────┤
-│ Tier     │ lidar                                                 │
-│ Rooms    │ 1                                                     │
-│   Room 1 │ 12 walls, 0 openings, ceiling: not_observed           │
-│ Runtime  │ 12.1s                                                 │
-└──────────┴───────────────────────────────────────────────────────┘
++----------+-------------------------------------------------------+
+| Property | Value                                                 |
++----------+-------------------------------------------------------+
+| Tier     | lidar                                                 |
+| Rooms    | 1                                                     |
+|   Room 1 | 12 walls, 0 openings, ceiling: not_observed           |
+| Runtime  | 12.1s                                                 |
++----------+-------------------------------------------------------+
 [OK] plan.json written to output\my_scan\plan.json
 ```
 
@@ -218,7 +213,7 @@ Use this mode on any iPhone (iPhone 11 through 16 Pro):
    - Make sure your iPhone is connected to the **same Wi-Fi network** as your laptop.
    - Type into Safari: `http://<your-laptop-ip>:8000` (e.g. `http://192.168.1.45:8000`).
 4. **Scan the Room:**
-   - Tap **"Open Camera"** and grant camera permissions.
+   - Tap **"Record Walkthrough"** or **"Take Photo"** to open the native iPhone camera directly.
    - The HUD will show you live pitch angle and real-time guidance prompts (`"TILT UP: Sweep up to ceiling"`, `"SLOW DOWN: Moving too fast"`, `"TOO CLOSE"`).
    - You can also upload any recorded `.mov` video or photos directly from your phone.
    - Instantly view and download the dimensioned vector floor plan (`plan.svg`) on your phone!
@@ -234,7 +229,7 @@ For sub-centimeter accuracy on **iPhone Pro models (12 Pro, 13 Pro, 14 Pro, 15 P
 2. **Capture Procedure (60 Seconds):**
    - Stand at the primary room doorway. Tap **Record**.
    - Walk slowly (~0.3 m/s) clockwise around the room perimeter at chest height.
-   - **Crucial Step (The Ceiling Sweep):** In the middle of the room, slowly tilt your phone up 60°–75° towards the ceiling, hold for 2 seconds to capture the ceiling plane, then tilt back down.
+   - **Crucial Step (The Ceiling Sweep):** In the middle of the room, slowly tilt your phone up 60 deg - 75 deg towards the ceiling, hold for 2 seconds to capture the ceiling plane, then tilt back down.
    - Complete the perimeter loop and return to the starting doorway threshold. Tap **Stop**.
 3. **Export to PC:**
    - Tap **Share / Export** in Stray Scanner.
@@ -246,4 +241,3 @@ For sub-centimeter accuracy on **iPhone Pro models (12 Pro, 13 Pro, 14 Pro, 15 P
      python -m floorscan.cli run <your_scan.zip> --out output/my_scan
      ```
    The engine automatically corrects ARKit odometry drift, fits wall and ceiling planes, detects doors/windows, evaluates damage, and exports `plan.json` and `plan.svg`.
-
